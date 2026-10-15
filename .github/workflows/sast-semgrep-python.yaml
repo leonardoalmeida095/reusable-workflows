@@ -1,0 +1,87 @@
+name: "Reusable SAST Semgrep"
+
+on:
+  workflow_call:
+    inputs:
+      workload_identity_provider:
+        required: true
+        type: string
+      service_account:
+        required: true
+        type: string
+      project_id:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  semgrep-scan:
+    name: SAST Semgrep
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
+
+    steps:
+      - name: 1. Checkout do código da aplicação
+        uses: actions/checkout@v4
+
+      # Reutiliza sua própria Composite Action de Auth!
+      - name: 2. Autenticação GCP
+        uses: leonardoalmeida095/reusable-workflows/actions/gcp-wif-auth@main
+        with:
+          workload_identity_provider: ${{ inputs.workload_identity_provider }}
+          service_account: ${{ inputs.service_account }}
+          project_id: ${{ inputs.project_id }}
+
+      - name: 3. Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 4. Executar Semgrep
+        id: semgrep
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check semgrep
+          semgrep scan \
+            --config=auto \
+            --config=p/owasp-top-ten \
+            --config=p/cwe-top-25 \
+            --config=.semgrep.yml \
+            --json --output=semgrep-report.json || true
+          semgrep scan \
+            --config=auto \
+            --config=p/owasp-top-ten \
+            --config=p/cwe-top-25 \
+            --config=.semgrep.yml \
+            --sarif --output=semgrep-report.sarif \
+            --error
+
+      - name: 5. Publicar Artefatos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: |
+            semgrep-report.json
+            semgrep-report.sarif
+          retention-days: 14
+
+      - name: 6. Enviar SARIF para o GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: semgrep-report.sarif
+
+      - name: 7. Quality Gate
+        if: always()
+        run: |
+          if [ "${{ steps.semgrep.outcome }}" != "success" ]; then
+            echo "SAST Semgrep reprovado por vulnerabilidades críticas."
+            exit 1
+          fi
+          echo "SAST Semgrep aprovado com sucesso!"

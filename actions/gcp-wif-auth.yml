@@ -1,0 +1,32 @@
+name: "GCP WIF Auth"
+description: "Autentica no Google Cloud via Workload Identity Federation e configura o SDK"
+
+inputs:
+  workload_identity_provider:
+    description: "ID do Provider WIF no GCP"
+    required: true
+  service_account:
+    description: "Service Account de CI a ser assumida"
+    required: true
+  project_id:
+    description: "ID do projeto GCP"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Autenticar via WIF
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.workload_identity_provider }}
+        service_account: ${{ inputs.service_account }}
+
+    - name: Setup gcloud CLI
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configurar Projeto GCP
+      if: ${{ inputs.project_id != '' }}
+      shell: bash
+      run: |
+        gcloud config set project "${{ inputs.project_id }}"
