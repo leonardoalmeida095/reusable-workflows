@@ -27,7 +27,6 @@ jobs:
       - name: 1. Checkout do código da aplicação
         uses: actions/checkout@v4
 
-      # Reutiliza sua própria Composite Action de Auth!
       - name: 2. Autenticação GCP
         uses: leonardoalmeida095/reusable-workflows/actions/gcp-wif-auth@main
         with:
@@ -46,17 +45,27 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check semgrep
+          
+          # Detecta se existe regra local customizada (.semgrep.yml)
+          EXTRA_CONFIG=""
+          if [ -f .semgrep.yml ]; then
+            EXTRA_CONFIG="--config=.semgrep.yml"
+          fi
+
+          # Gera relatórios JSON e SARIF
           semgrep scan \
             --config=auto \
             --config=p/owasp-top-ten \
             --config=p/cwe-top-25 \
-            --config=.semgrep.yml \
+            $EXTRA_CONFIG \
             --json --output=semgrep-report.json || true
+
+          # Avalia com bloqueio por severidade ERROR
           semgrep scan \
             --config=auto \
             --config=p/owasp-top-ten \
             --config=p/cwe-top-25 \
-            --config=.semgrep.yml \
+            $EXTRA_CONFIG \
             --sarif --output=semgrep-report.sarif \
             --error
 
